@@ -1,0 +1,98 @@
+---
+title: "STATEICP"
+format: pdf
+editor: visual
+---
+
+```{r}
+#| warning: false
+#| message: false
+#| echo: false
+library(haven)
+library(tidyverse)
+library(labelled)
+library(dplyr)
+ipums_extract <- read_dta("usa_00004.dta.gz")
+
+ipums_extract <- 
+  ipums_extract |>
+  select(stateicp,educ, educd) |>
+  to_factor()
+```
+
+```{r}
+#| warning: false
+#| message: false
+#| echo: false
+# Calculate the number of respondents with a doctoral degree in each state
+doctoral_counts <- ipums_extract |>
+  filter(educd == "Doctoral degree") |>  # Filter for respondents with a doctoral degree
+  group_by(stateicp) |>
+  summarise(doctoral_count = n()) |>  # Count the number of respondents with a doctoral degree per state
+  ungroup()
+
+# Display the resulting counts of doctoral degree holders by state
+doctoral_counts
+
+```
+
+# Obtain data
+
+To access the data from IPUMS USA, we first selected "IPUMS USA" on the IPUMS website, then clicked "Get Data" and chose the "2022 ACS" under "SELECT SAMPLE." For state-level information, we navigated to "HOUSEHOLD" > "GEOGRAPHIC" and added "STATEICP" to our cart. For individual-level data, we went to "PERSON" and added "EDUC." After reviewing the selections in the cart, we clicked "CREATE DATA EXTRACT." We then changed the "DATA FORMAT" to ".dta" and submitted the extract. After logging in or creating an account, we received an email notification once the extract was ready. We downloaded the file (e.g., "usa_00004.dta") and saved it locally for use in `R`.
+
+# Overview of the ratio estimators approach
+
+The ratio estimators approach is a statistical method used to estimate population totals or averages by leveraging known ratios from a sample. This technique involves calculating the ratio of a specific characteristic (e.g., the number of doctoral degree holders) to the total population in a known subset (such as California). The same ratio is then applied to other subsets to estimate their totals, under the assumption that similar relationships hold across the broader population. This method is especially helpful when the exact population size is unknown, but sample data provides proportional relationships that can be extended to the larger group.
+
+# Estimates and the actual number
+```{r}
+#| warning: false
+#| message: false
+#| echo: false
+# Total number of respondents in California (given)
+total_respondents_california <- 391171  
+
+# Number of respondents with a doctoral degree in California
+doctoral_respondents_california <- doctoral_counts |>
+  filter(stateicp == "california") |>
+  pull(doctoral_count)
+
+# Calculate the ratio of doctoral degree holders to total respondents in California
+doctoral_ratio_california <- doctoral_respondents_california / total_respondents_california
+
+# Estimate the total number of respondents in each state using the ratio estimator
+estimated_total_counts <- doctoral_counts |>
+  mutate(estimated_total = doctoral_count / doctoral_ratio_california)
+
+# Get the actual total number of respondents in each state
+actual_counts <- ipums_extract |>
+  group_by(stateicp) |>
+  summarise(actual_total = n()) |>  # Count of actual respondents per state
+  ungroup()
+
+# Combine the estimated totals with the actual totals
+comparison <- doctoral_counts |>
+  left_join(actual_counts, by = "stateicp") |>  # Merge with actual counts
+  left_join(estimated_total_counts, by = "stateicp") |>  # Merge with estimated totals
+  select(stateicp, actual_total, estimated_total)  # Select relevant columns
+
+# Display the comparison between actual and estimated counts
+comparison
+
+```
+
+# Explanation
+
+The estimates of total respondents in each state using the ratio estimators approach may differ from the actual numbers due to several factors:
+
+-   If the estimation is based on a sample rather than a full population census, random variability in the sample can impact the calculated ratio and the accuracy of the estimates.
+
+-   Educational attainment is not evenly distributed across the U.S. Factors like regional policies, cultural norms, and access to higher education differ, so the ratio derived from California may not apply to other states.
+
+-   The ratio estimator assumes that the proportion of doctoral degree holders in California reflects the proportion in other states. However, educational attainment varies widely due to differences in demographics, economic conditions, and educational resources across states. This variation can lead to discrepancies between estimated and actual figures.
+
+-   The Laplace ratio method assumes that the relationship between the characteristic of interest (doctoral degree holders) and the total population is consistent across all units. If California’s ratio is not reflective of other states due to unobserved factors, the estimates will be biased.
+
+These factors highlight that the assumption of uniformity in ratio estimators often leads to differences when applied to diverse populations, such as the varying states in the U.S.
+
+
